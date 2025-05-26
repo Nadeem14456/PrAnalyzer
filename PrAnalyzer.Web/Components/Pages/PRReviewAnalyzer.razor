@@ -1,0 +1,285 @@
+@page "/prReviewAnalyzer"
+@using PrAnalyzer.Web.Models
+@inject IHttpClientFactory HttpClientFactory
+@inject ILogger<Index> Logger
+@using System.ComponentModel.DataAnnotations
+
+<PageTitle>PR Review Analyzer</PageTitle>
+
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-md-12">
+            <h1 class="display-4">Pull Request Review Analyzer</h1>
+            <p class="lead">Extract and classify review comments from GitHub pull requests</p>
+        </div>
+    </div>
+
+    <div class="row mt-4">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h3>Analyze Pull Request</h3>
+                </div>
+                <div class="card-body">
+                    <EditForm Model="InputModel" OnValidSubmit="AnalyzePrAsync" FormName="prReviewAnalyzerForm">
+                        <DataAnnotationsValidator />
+                        <ValidationSummary />
+                        <div class="mb-3">
+                            <label for="repoUrl" class="form-label">Repository URL</label>
+                            <InputText id="repoUrl" class="form-control" @bind-Value="InputModel.RepoUrl" placeholder="https://github.com/owner/repo" required />
+                            <div class="form-text">Enter the GitHub repository URL</div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="prNumber" class="form-label">Pull Request Number</label>
+                            <InputNumber id="prNumber" class="form-control" @bind-Value="InputModel.PrNumber" placeholder="123" min="1" required />
+                            <div class="form-text">Enter the PR number</div>
+                        </div>
+                        <button type="submit" class="btn btn-primary" disabled="@(IsLoading)">
+                            <i class="fas fa-search"></i> Analyze PR
+                        </button>
+                        @if (!string.IsNullOrEmpty(ErrorMessage))
+                        {
+                            <div class="alert alert-danger mt-2">@ErrorMessage</div>
+                        }
+                    </EditForm>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h3>Features</h3>
+                </div>
+                <div class="card-body">
+                    <ul class="list-unstyled">
+                        <li><i class="fas fa-check text-success"></i> Extract all review comments</li>
+                        <li><i class="fas fa-check text-success"></i> Classify comment types (Bug, Security, Performance, etc.)</li>
+                        <li><i class="fas fa-check text-success"></i> Analyze sentiment (Positive, Negative, Constructive)</li>
+                        <li><i class="fas fa-check text-success"></i> Group by user and category</li>
+                        <li><i class="fas fa-check text-success"></i> Extract keywords from comments</li>
+                        <li><i class="fas fa-check text-success"></i> Cached results for performance</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @if (Analysis != null)
+    {
+        <div class="row mt-4">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h3>Analysis Results</h3>
+                        <small class="text-muted">
+                            @Analysis.RepoUrl - PR #@Analysis.PrNumber
+                            (Analyzed: @Analysis.AnalyzedAt.ToString("yyyy-MM-dd HH:mm UTC"))
+                        </small>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-3">
+                                <div class="card bg-primary text-white">
+                                    <div class="card-body text-center">
+                                        <h4>@Analysis.TotalComments</h4>
+                                        <p>Total Comments</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="card bg-success text-white">
+                                    <div class="card-body text-center">
+                                        <h4>@Analysis.CommentsByUser.Count</h4>
+                                        <p>Reviewers</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="card bg-info text-white">
+                                    <div class="card-body text-center">
+                                        <h4>@Analysis.CommentsByType.Count</h4>
+                                        <p>Comment Types</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="card bg-warning text-white">
+                                    <div class="card-body text-center">
+                                        <h4>@Analysis.CommentsBySentiment.Count</h4>
+                                        <p>Sentiment Types</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="row mt-4">
+                            <div class="col-md-4">
+                                <h5>Comments by User</h5>
+                                <ul class="list-group">
+                                    @foreach (var user in Analysis.CommentsByUser.OrderByDescending(u => u.Value))
+                                    {
+                                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                                            @user.Key
+                                            <span class="badge bg-primary rounded-pill">@user.Value</span>
+                                        </li>
+                                    }
+                                </ul>
+                            </div>
+                            <div class="col-md-4">
+                                <h5>Comments by Type</h5>
+                                <ul class="list-group">
+                                    @foreach (var type in Analysis.CommentsByType.OrderByDescending(t => t.Value))
+                                    {
+                                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                                            @type.Key
+                                            <span class="badge bg-info rounded-pill">@type.Value</span>
+                                        </li>
+                                    }
+                                </ul>
+                            </div>
+                            <div class="col-md-4">
+                                <h5>Comments by Sentiment</h5>
+                                <ul class="list-group">
+                                    @foreach (var sentiment in Analysis.CommentsBySentiment.OrderByDescending(s => s.Value))
+                                    {
+                                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                                            @sentiment.Key
+                                            <span class="badge bg-success rounded-pill">@sentiment.Value</span>
+                                        </li>
+                                    }
+                                </ul>
+                            </div>
+                        </div>
+
+                        <div class="row mt-4">
+                            <div class="col-md-12">
+                                <h5>All Comments</h5>
+                                <div class="table-responsive">
+                                    <table class="table table-striped">
+                                        <thead>
+                                            <tr>
+                                                <th>User</th>
+                                                <th>Comment</th>
+                                                <th>Type</th>
+                                                <th>Sentiment</th>
+                                                <th>Category</th>
+                                                <th>Date</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach (var comment in Analysis.Comments)
+                                            {
+                                                <tr>
+                                                    <td><strong>@comment.User</strong></td>
+                                                    <td>
+                                                        <div class="comment-body">
+                                                            @comment.Body
+                                                        </div>
+                                                        @if (comment.Classification.Keywords.Any())
+                                                        {
+                                                            <div class="mt-1">
+                                                                @foreach (var keyword in comment.Classification.Keywords)
+                                                                {
+                                                                    <span class="badge bg-secondary me-1">@keyword</span>
+                                                                }
+                                                            </div>
+                                                        }
+                                                    </td>
+                                                    <td>
+                                                        <span class="badge bg-primary">@comment.Classification.Type</span>
+                                                    </td>
+                                                    <td>
+                                                        <span class="badge bg-@GetSentimentColor(comment.Classification.Sentiment.ToString())">
+                                                            @comment.Classification.Sentiment
+                                                        </span>
+                                                    </td>
+
+                                                    <td>
+                                                        <span class="badge bg-@GetSentimentColor(comment.Classification.Sentiment.ToString())">
+                                                            @comment.Classification.Category
+                                                        </span>
+                                                    </td>
+                                                    @* <td>
+                                                        @if (!string.IsNullOrEmpty(comment.Path))
+                                                        {
+                                                            <code>@comment.Path</code>
+                                                        }
+                                                    </td> *@
+                                                    <td>@comment.CreatedAt.ToString("yyyy-MM-dd HH:mm")</td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+<style>
+    .comment-body {
+        max-width: 400px;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+    }
+</style>
+
+@code {
+    public class PrReviewInputModel
+    {
+        public string RepoUrl { get; set; } = @"https://github.com/UKHO/exchange-set-fulfilment-service";
+        public int PrNumber { get; set; } = 46;
+    }
+
+    private PrReviewInputModel InputModel { get; set; } = new();
+    public PullRequestAnalysis? Analysis { get; set; }
+    public string? ErrorMessage { get; set; }
+    public bool IsLoading { get; set; }
+
+    private async Task AnalyzePrAsync()
+    {
+        ErrorMessage = null;
+        IsLoading = true;
+        Analysis = null;
+        try
+        {
+            var client = HttpClientFactory.CreateClient("ApiService");
+            var response = await client.GetAsync($"/PullRequest/analyze?repoUrl={Uri.EscapeDataString(InputModel.RepoUrl)}&prNumber={InputModel.PrNumber}");
+            if (response.IsSuccessStatusCode)
+            {
+                var json = await response.Content.ReadAsStringAsync();
+                Analysis = System.Text.Json.JsonSerializer.Deserialize<PullRequestAnalysis>(json, new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            }
+            else
+            {
+                var error = await response.Content.ReadAsStringAsync();
+                ErrorMessage = $"Error: {error}";
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error analyzing PR");
+            ErrorMessage = $"Error: {ex.Message}";
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    string GetSentimentColor(string sentiment)
+    {
+        return sentiment switch
+        {
+            "Positive" => "success",
+            "Negative" => "danger",
+            "Constructive" => "warning",
+            _ => "secondary"
+        };
+    }
+}
